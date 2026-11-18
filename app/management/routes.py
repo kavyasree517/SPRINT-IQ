@@ -45,6 +45,7 @@ from .risk_analysis import (
 
 management_bp = Blueprint("management", __name__)
 TASK_STATUSES = (("todo", "To Do"), ("in_progress", "In Progress"), ("done", "Done"))
+PRIORITY_ORDER = ["critical", "high", "medium", "low"]
 
 
 def management_required(view):
@@ -944,4 +945,144 @@ def risk_dashboard():
         selected_sprint_id=selected_sprint.id if selected_sprint else None,
         selected_severity=severity_filter,
         selected_category=category_filter,
+    )
+
+
+# ── Analytics route ──────────────────────────────────────────
+@management_bp.route("/analytics")
+@management_required
+def analytics():
+    """Analytics page with sprint burndown, utilization, and task stats."""
+    project_id = request.args.get("project_id", type=int)
+    sprint_id = request.args.get("sprint_id", type=int)
+
+    if current_user.role == "administrator":
+        projects = Project.query.order_by(Project.name).all()
+    else:
+        projects = Project.query.filter_by(owner_id=current_user.id).order_by(Project.name).all()
+
+    project_ids = {p.id for p in projects}
+
+    selected_project = None
+    if project_id:
+        selected_project = next((p for p in projects if p.id == project_id), None)
+
+    sprint_q = Sprint.query.filter(Sprint.project_id.in_(project_ids)).order_by(Sprint.start_date)
+    if selected_project:
+        sprint_q = sprint_q.filter_by(project_id=selected_project.id)
+    if sprint_id:
+        sprint_q = sprint_q.filter_by(id=sprint_id)
+    sprints = sprint_q.all()
+
+    filter_sprints_q = Sprint.query.filter(Sprint.project_id.in_(project_ids)).order_by(Sprint.start_date)
+    filter_sprints = filter_sprints_q.all()
+
+    sprint_ids_set = {s.id for s in sprints}
+    tasks = Task.query.filter(Task.sprint_id.in_(sprint_ids_set)).all() if sprint_ids_set else []
+    members = TeamMember.query.order_by(TeamMember.name).all()
+
+    # Build sprint rows and chart data
+    sprint_rows = []
+    sprint_labels = []
+    sprint_completion = []
+    sprint_remaining = []
+    total_hours_allocated = 0.0
+    total_tasks_done = 0
+
+    for s in sprints:
+        s_tasks = [t for t in tasks if t.sprint_id == s.id]
+        s_total = len(s_tasks)
+        s_done = sum(1 for t in s_tasks if t.status == "done")
+        s_pct = round(s_done / s_total * 100, 1) if s_total > 0 else 0.0
+        s_effort = sum(
+            a.assigned_hours
+            for t in s_tasks
+            if t.status != "done"
+            for a in t.assignments
+        )
+        sprint_rows.append({
+            "name": s.name,
+            "project_name": s.project.name,
+            "start_date": str(s.start_date),
+            "end_date": str(s.end_date),
+            "total_tasks": s_total,
+            "done_tasks": s_done,
+            "remaining_tasks": s_total - s_done,
+            "completion": s_pct,
+            "remaining_effort": s_effort,
+        })
+        label = f"{s.project.name[:8]}/{s.name[:10]}"
+        sprint_labels.append(label)
+        sprint_completion.append(s_pct)
+        sprint_remaining.append(round(100.0 - s_pct, 1))
+        total_tasks_done += s_done
+        total_hours_allocated += sum(a.assigned_hours for t in s_tasks for a in t.assignments)
+
+    avg_completion = sum(sprint_completion) / len(sprint_completion) if sprint_completion else 0.0
+
+    # Priority breakdown
+    priority_map = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for t in tasks:
+        pr = (t.priority or "medium").lower()
+        if pr in priority_map:
+            priority_map[pr] += 1
+    priority_labels = [k.title() for k, v in priority_map.items() if v > 0]
+    priority_values = [v for v in priority_map.values() if v > 0]
+
+    # Status breakdown
+    status_map = {"todo": 0, "in_progress": 0, "done": 0}
+    for t in tasks:
+        st = (t.status or "todo").lower()
+        if st in status_map:
+            status_map[st] += 1
+    status_labels = ["To Do", "In Progress", "Done"]
+    status_values = [status_map["todo"], status_map["in_progress"], status_map["done"]]
+
+    # Member utilization
+    member_labels = []
+    member_utilization = []
+    total_util = 0.0
+    util_count = 0
+    for m in members:
+        allocated = sum(
+            a.assigned_hours
+            for a in m.assignments
+            if a.task.sprint_id in sprint_ids_set
+        )
+        if m.available_hours > 0 and sprint_ids_set:
+            util = round(allocated / m.available_hours * 100, 1)
+        else:
+            util = 0.0
+        member_labels.append(m.name)
+        member_utilization.append(util)
+        if util > 0:
+            total_util += util
+            util_count += 1
+
+    avg_utilization = round(total_util / util_count, 1) if util_count else 0.0
+
+    analytics_data = {
+        "completion_rate": round(avg_completion, 1),
+        "total_hours_allocated": round(total_hours_allocated, 1),
+        "avg_utilization": avg_utilization,
+        "total_tasks_done": total_tasks_done,
+        "sprint_labels": sprint_labels,
+        "sprint_completion": sprint_completion,
+        "sprint_remaining": sprint_remaining,
+        "priority_labels": priority_labels,
+        "priority_values": priority_values,
+        "status_labels": status_labels,
+        "status_values": status_values,
+        "member_labels": member_labels,
+        "member_utilization": member_utilization,
+        "sprint_rows": sprint_rows,
+    }
+
+    return render_template(
+        "management/analytics.html",
+        projects=projects,
+        filter_sprints=filter_sprints,
+        selected_project_id=selected_project.id if selected_project else None,
+        selected_sprint_id=sprint_id,
+        analytics=analytics_data,
     )

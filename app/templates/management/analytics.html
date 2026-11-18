@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics — SprintIQ{% endblock %}
+{% block page_title %}Analytics{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 page-header">
+  <div>
+    <h1><i class="bi bi-bar-chart-line-fill text-brand me-2"></i>Analytics</h1>
+    <p>Sprint burndown, task completion trends, developer utilization, and project performance.</p>
+  </div>
+  <a class="btn btn-outline-primary" href="{{ url_for('main.dashboard') }}">← Dashboard</a>
+</div>
+
+<!-- Filters -->
+<div class="card p-3 mb-4">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="analytics-project">Project</label>
+      <select class="form-select" id="analytics-project" name="project_id">
+        <option value="">All projects</option>
+        {% for project in projects %}
+          <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="analytics-sprint">Sprint</label>
+      <select class="form-select" id="analytics-sprint" name="sprint_id">
+        <option value="">All sprints</option>
+        {% for sprint in filter_sprints %}
+          <option value="{{ sprint.id }}" {% if selected_sprint_id == sprint.id %}selected{% endif %}>
+            {{ sprint.project.name }} / {{ sprint.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-2 d-flex gap-2">
+      <button class="btn btn-primary flex-grow-1" type="submit">Apply</button>
+      {% if selected_project_id or selected_sprint_id %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('management.analytics') }}">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- Summary stat cards -->
+<section class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <article class="stat-card h-100">
+      <div class="stat-card-icon icon-green"><i class="bi bi-check2-circle"></i></div>
+      <div>
+        <div class="stat-card-value">{{ analytics.completion_rate | int }}%</div>
+        <div class="stat-card-label">Avg Completion</div>
+      </div>
+    </article>
+  </div>
+  <div class="col-6 col-md-3">
+    <article class="stat-card h-100">
+      <div class="stat-card-icon icon-violet"><i class="bi bi-hourglass-split"></i></div>
+      <div>
+        <div class="stat-card-value">{{ analytics.total_hours_allocated | int }}h</div>
+        <div class="stat-card-label">Hours Allocated</div>
+      </div>
+    </article>
+  </div>
+  <div class="col-6 col-md-3">
+    <article class="stat-card h-100">
+      <div class="stat-card-icon icon-cyan"><i class="bi bi-people"></i></div>
+      <div>
+        <div class="stat-card-value">{{ analytics.avg_utilization | int }}%</div>
+        <div class="stat-card-label">Avg Utilization</div>
+      </div>
+    </article>
+  </div>
+  <div class="col-6 col-md-3">
+    <article class="stat-card h-100">
+      <div class="stat-card-icon icon-amber"><i class="bi bi-list-check"></i></div>
+      <div>
+        <div class="stat-card-value">{{ analytics.total_tasks_done }}</div>
+        <div class="stat-card-label">Tasks Completed</div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- Charts row 1 -->
+<div class="row g-3 mb-4">
+  <!-- Sprint burndown -->
+  <div class="col-12 col-xl-8">
+    <article class="card p-4 h-100">
+      <h2 class="h5">Sprint Completion Overview</h2>
+      {% if analytics.sprint_labels %}
+        <div class="analytics-chart-wrap">
+          <canvas id="sprint-completion-chart"></canvas>
+        </div>
+      {% else %}
+        <div class="dashboard-chart-empty">
+          <i class="bi bi-graph-up"></i>
+          <span>No sprint data for the selected filters.</span>
+        </div>
+      {% endif %}
+    </article>
+  </div>
+
+  <!-- Task completion by priority -->
+  <div class="col-12 col-xl-4">
+    <article class="card p-4 h-100">
+      <h2 class="h5">Tasks by Priority</h2>
+      {% if analytics.priority_labels %}
+        <div class="analytics-chart-wrap">
+          <canvas id="priority-completion-chart"></canvas>
+        </div>
+      {% else %}
+        <div class="dashboard-chart-empty">
+          <i class="bi bi-pie-chart"></i>
+          <span>No task data.</span>
+        </div>
+      {% endif %}
+    </article>
+  </div>
+</div>
+
+<!-- Charts row 2 -->
+<div class="row g-3 mb-4">
+  <!-- Developer utilization -->
+  <div class="col-12 col-xl-6">
+    <article class="card p-4 h-100">
+      <h2 class="h5">Developer Utilization</h2>
+      {% if analytics.member_labels %}
+        <div class="analytics-chart-wrap">
+          <canvas id="utilization-chart"></canvas>
+        </div>
+      {% else %}
+        <div class="dashboard-chart-empty">
+          <i class="bi bi-people"></i>
+          <span>No team workload data.</span>
+        </div>
+      {% endif %}
+    </article>
+  </div>
+
+  <!-- Task status breakdown -->
+  <div class="col-12 col-xl-6">
+    <article class="card p-4 h-100">
+      <h2 class="h5">Task Status Breakdown</h2>
+      {% if analytics.status_labels %}
+        <div class="analytics-chart-wrap">
+          <canvas id="status-breakdown-chart"></canvas>
+        </div>
+      {% else %}
+        <div class="dashboard-chart-empty">
+          <i class="bi bi-bar-chart"></i>
+          <span>No task data.</span>
+        </div>
+      {% endif %}
+    </article>
+  </div>
+</div>
+
+<!-- Sprint performance table -->
+<section class="card p-4">
+  <h2 class="h5 mb-3">Sprint Performance Report</h2>
+  {% if analytics.sprint_rows %}
+    <div class="table-responsive">
+      <table class="table align-middle table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Sprint</th>
+            <th>Project</th>
+            <th>Dates</th>
+            <th>Completion</th>
+            <th>Total Tasks</th>
+            <th>Done</th>
+            <th>Remaining</th>
+            <th>Effort Left</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in analytics.sprint_rows %}
+            <tr>
+              <td><strong>{{ row.name }}</strong></td>
+              <td class="small text-muted">{{ row.project_name }}</td>
+              <td class="small text-nowrap text-muted">{{ row.start_date }} — {{ row.end_date }}</td>
+              <td style="min-width:150px;">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="progress progress-sm flex-grow-1">
+                    <div class="progress-bar bg-success" style="width:{{ row.completion }}%"></div>
+                  </div>
+                  <span class="small fw-semibold">{{ row.completion | int }}%</span>
+                </div>
+              </td>
+              <td>{{ row.total_tasks }}</td>
+              <td><span class="text-success fw-semibold">{{ row.done_tasks }}</span></td>
+              <td>{{ row.remaining_tasks }}</td>
+              <td>{{ "%.1f"|format(row.remaining_effort) }}h</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <i class="bi bi-graph-up empty-state-icon"></i>
+      <h3>No sprint data</h3>
+      <p>Create sprints and assign tasks to see performance reports.</p>
+    </div>
+  {% endif %}
+</section>
+
+<!-- Analytics JSON payload -->
+<script type="application/json" id="analytics-data">{{ analytics | tojson }}</script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+{% endblock %}

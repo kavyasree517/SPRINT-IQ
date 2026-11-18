@@ -4,28 +4,158 @@
 {% block page_title %}Sprints{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1>Sprints</h1>
-  <p>Sprints across your projects.</p>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 page-header">
+  <div>
+    <h1>Sprints</h1>
+    <p>All sprints across your projects with status, dates, and progress.</p>
+  </div>
+  {% if current_user.role in ['administrator', 'project_manager'] %}
+    <a class="btn btn-primary" href="{{ url_for('management.projects') }}">
+      <i class="bi bi-plus-lg me-1"></i>Create via Project
+    </a>
+  {% endif %}
 </div>
+
+<!-- Search & filter -->
+<div class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="sprint-search">Search sprints</label>
+      <div class="input-group">
+        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" id="sprint-search" class="form-control border-start-0" placeholder="Sprint name or goal…">
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="sprint-status-filter">Status</label>
+      <select id="sprint-status-filter" class="form-select">
+        <option value="">All statuses</option>
+        <option value="planned">Planned</option>
+        <option value="active">Active</option>
+        <option value="completed">Completed</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-4 d-flex align-items-end justify-content-end">
+      <span class="text-muted small" id="sprint-count">{{ sprints | length }} sprint(s)</span>
+    </div>
+  </div>
+</div>
+
 {% if sprints %}
-  <div class="table-responsive card">
-    <table class="table align-middle mb-0">
-      <thead><tr><th>Sprint</th><th>Project</th><th>Dates</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-      {% for sprint in sprints %}
-        <tr>
-          <td><strong>{{ sprint.name }}</strong><div class="small text-muted">{{ sprint.sprint_goal or '' }}</div></td>
-          <td><a href="{{ url_for('management.project_detail', project_id=sprint.project_id) }}">{{ sprint.project.name }}</a></td>
-          <td>{{ sprint.start_date }} — {{ sprint.end_date }}</td>
-          <td>{{ sprint.status|title }}</td>
-          <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('management.project_detail', project_id=sprint.project_id) }}">Open</a></td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table align-middle table-hover mb-0" id="sprints-table">
+        <thead>
+          <tr>
+            <th>Sprint</th>
+            <th>Project</th>
+            <th>Dates</th>
+            <th>Progress</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for sprint in sprints %}
+          {% set s_total = sprint.tasks | length %}
+          {% set s_done = sprint.tasks | selectattr('status', 'equalto', 'done') | list | length %}
+          {% set s_pct = (s_done / s_total * 100) | round(0) if s_total > 0 else 0 %}
+          <tr class="sprint-row"
+              data-name="{{ sprint.name | lower }}"
+              data-goal="{{ (sprint.sprint_goal or '') | lower }}"
+              data-status="{{ sprint.status }}">
+            <td>
+              <strong>{{ sprint.name }}</strong>
+              {% if sprint.sprint_goal %}
+                <div class="small text-muted text-truncate" style="max-width:220px;">{{ sprint.sprint_goal }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('management.project_detail', project_id=sprint.project_id) }}" class="text-decoration-none">
+                {{ sprint.project.name }}
+              </a>
+            </td>
+            <td class="small text-muted text-nowrap">
+              <i class="bi bi-calendar3 me-1"></i>{{ sprint.start_date }} — {{ sprint.end_date }}
+            </td>
+            <td style="min-width:160px;">
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress progress-sm flex-grow-1">
+                  <div class="progress-bar bg-success" style="width:{{ s_pct }}%"></div>
+                </div>
+                <span class="small text-nowrap">{{ s_pct | int }}%</span>
+              </div>
+              <div class="small text-muted">{{ s_done }}/{{ s_total }} tasks</div>
+            </td>
+            <td>
+              <span class="badge {% if sprint.status == 'active' %}text-bg-success{% elif sprint.status == 'completed' %}text-bg-secondary{% else %}text-bg-warning text-dark{% endif %}">
+                {{ sprint.status | title }}
+              </span>
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('management.project_detail', project_id=sprint.project_id) }}">
+                  <i class="bi bi-eye"></i>
+                </a>
+                {% if current_user.role in ['administrator', 'project_manager'] %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.allocations', sprint_id=sprint.id) }}" title="Allocate">
+                    <i class="bi bi-person-check"></i>
+                  </a>
+                  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.edit_sprint', sprint_id=sprint.id) }}" title="Edit">
+                    <i class="bi bi-pencil"></i>
+                  </a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div id="no-sprints-found" class="card p-4 text-center d-none">
+    <div class="empty-state">
+      <i class="bi bi-search empty-state-icon"></i>
+      <h3>No sprints match your search</h3>
+    </div>
   </div>
 {% else %}
-  <div class="card p-4 text-secondary">No sprints have been created yet.</div>
+  <div class="card p-5">
+    <div class="empty-state">
+      <i class="bi bi-lightning-charge empty-state-icon"></i>
+      <h3>No sprints yet</h3>
+      <p>Create a project first, then add sprints to organize your work.</p>
+      {% if current_user.role in ['administrator', 'project_manager'] %}
+        <a href="{{ url_for('management.create_project') }}" class="btn btn-primary mt-2">Create project</a>
+      {% endif %}
+    </div>
+  </div>
 {% endif %}
+
+<script>
+(function() {
+  const searchEl = document.getElementById('sprint-search');
+  const statusEl = document.getElementById('sprint-status-filter');
+  const rows = document.querySelectorAll('.sprint-row');
+  const countEl = document.getElementById('sprint-count');
+  const noFound = document.getElementById('no-sprints-found');
+
+  function filter() {
+    const q = (searchEl ? searchEl.value : '').toLowerCase();
+    const s = statusEl ? statusEl.value : '';
+    let vis = 0;
+    rows.forEach(row => {
+      const matchText = !q || row.dataset.name.includes(q) || row.dataset.goal.includes(q);
+      const matchStatus = !s || row.dataset.status === s;
+      row.style.display = (matchText && matchStatus) ? '' : 'none';
+      if (matchText && matchStatus) vis++;
+    });
+    if (countEl) countEl.textContent = vis + ' sprint(s)';
+    if (noFound) noFound.classList.toggle('d-none', vis > 0 || rows.length === 0);
+  }
+
+  if (searchEl) searchEl.addEventListener('input', filter);
+  if (statusEl) statusEl.addEventListener('change', filter);
+})();
+</script>
 {% endblock %}
