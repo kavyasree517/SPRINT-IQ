@@ -20,6 +20,18 @@ A Flask-based web application for Agile sprint planning and workload balancing. 
 - Rule-based sprint allocation recommendations with skill matching, capacity limits, workload utilization, manager approval/rejection, and explicit manual overrides
 - Database-backed dashboard statistics, project/sprint filters, sprint progress, task status and priority charts, and team workload visualization
 - Manager-only sprint risk monitoring for deadlines, overloaded capacity, sprint completion, and task assignment suitability
+- Session-authenticated JSON REST API for users, projects, project memberships, team members, sprints, tasks, allocations, workload, risk, and analytics
+- Additive project-membership table and actual task-effort tracking for API reporting
+
+## REST API
+
+The JSON API is documented in [API_DOCUMENTATION.md](./API_DOCUMENTATION.md).
+It shares the web application's session authentication and database; mutating
+requests require a CSRF token from `GET /api/csrf-token` in the
+`X-CSRFToken` header. Public API registration grants only the `team_member`
+role, and only administrators can change roles. Risk and allocation outputs
+reuse the existing deterministic, explainable rules and are not predictive
+forecasts.
 
 ## Dashboard insights
 
@@ -74,6 +86,7 @@ SprintIQ/
 ├─ app/
 │  ├─ __init__.py          # Application factory
 │  ├─ models.py            # SQLAlchemy model definitions
+│  ├─ api/                 # Session-authenticated JSON REST API
 │  ├─ main/                # Core routes (dashboard, health)
 │  │   ├─ __init__.py
 │  │   └─ routes.py
@@ -83,6 +96,7 @@ SprintIQ/
 │  ├─ templates/           # Jinja2 templates
 │  └─ static/              # CSS / JS assets
 ├─ requirements.txt
+├─ API_DOCUMENTATION.md
 ├─ config.py
 ├─ run.py
 └─ .gitignore

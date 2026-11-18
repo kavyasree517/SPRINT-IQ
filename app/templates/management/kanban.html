@@ -6,19 +6,63 @@
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 page-header">
   <div><h1>Task board</h1><p>Move work through To Do, In Progress, and Done.</p></div>
-  {% if current_user.role in ['administrator', 'project_manager'] %}
-    <a class="btn btn-primary" href="{{ url_for('management.create_task') }}"><i class="bi bi-plus-lg"></i> New task</a>
-  {% endif %}
+  <div class="d-flex gap-2">
+    {% if current_user.role in ['administrator', 'project_manager'] %}
+      <a class="btn btn-primary" href="{{ url_for('management.create_task') }}"><i class="bi bi-plus-lg"></i> New task</a>
+    {% endif %}
+  </div>
 </div>
-<div class="kanban-board">
+
+<!-- Search & filter bar -->
+<div class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label" for="task-search">Search tasks</label>
+      <div class="input-group">
+        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" id="task-search" class="form-control border-start-0" placeholder="Title, description, assignee…">
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label" for="priority-filter">Priority</label>
+      <select id="priority-filter" class="form-select">
+        <option value="">All</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="view-toggle">View</label>
+      <div class="btn-group w-100" role="group">
+        <button type="button" class="btn btn-outline-secondary active" id="view-kanban" title="Kanban view">
+          <i class="bi bi-kanban"></i> Board
+        </button>
+        <button type="button" class="btn btn-outline-secondary" id="view-list" title="List view">
+          <i class="bi bi-list-ul"></i> List
+        </button>
+      </div>
+    </div>
+    <div class="col-12 col-md-3 d-flex align-items-end justify-content-end">
+      <span class="text-muted small" id="task-count">{{ tasks | length }} task(s)</span>
+    </div>
+  </div>
+</div>
+
+<div id="kanban-view" class="kanban-board">
   {% for status, label in statuses %}
     <section class="kanban-column">
       <div class="kanban-column-heading">
         <h2>{{ label }}</h2>
-        <span class="badge text-bg-light">{{ tasks|selectattr('status', 'equalto', status)|list|length }}</span>
+        <span class="badge text-bg-light" id="count-{{ status }}">{{ tasks|selectattr('status', 'equalto', status)|list|length }}</span>
       </div>
       {% for task in tasks if task.status == status %}
-        <article class="card kanban-task p-3">
+        <article class="card kanban-task p-3"
+                 data-title="{{ task.title | lower }}"
+                 data-desc="{{ (task.description or '') | lower }}"
+                 data-priority="{{ task.priority }}"
+                 data-assignee="{{ task.assignments | map(attribute='team_member.name') | join(' ') | lower }}">
           <div class="d-flex justify-content-between gap-2">
             <span class="badge priority-{{ task.priority }}">{{ task.priority|title }}</span>
             <span class="small text-muted">{{ task.estimated_hours }}h</span>
@@ -65,4 +109,152 @@
     </section>
   {% endfor %}
 </div>
+
+<!-- List view (toggleable) -->
+<div id="list-view" class="d-none">
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table align-middle table-hover mb-0" id="tasks-table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Project / Sprint</th>
+            <th>Priority</th>
+            <th>Status</th>
+            <th>Assignee</th>
+            <th>Hours</th>
+            <th>Due</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+            <tr class="task-row"
+                data-title="{{ task.title | lower }}"
+                data-desc="{{ (task.description or '') | lower }}"
+                data-priority="{{ task.priority }}"
+                data-assignee="{{ task.assignments | map(attribute='team_member.name') | join(' ') | lower }}"
+                data-status="{{ task.status }}">
+              <td>
+                <strong>{{ task.title }}</strong>
+                {% if task.description %}
+                  <div class="small text-muted text-truncate" style="max-width:200px;">{{ task.description }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('management.project_detail', project_id=task.sprint.project_id) }}" class="text-decoration-none small">
+                  {{ task.sprint.project.name }}
+                </a>
+                <div class="small text-muted">{{ task.sprint.name }}</div>
+              </td>
+              <td><span class="badge priority-{{ task.priority }}">{{ task.priority | title }}</span></td>
+              <td>
+                <span class="badge {% if task.status == 'done' %}text-bg-success{% elif task.status == 'in_progress' %}text-bg-primary{% else %}text-bg-light text-dark{% endif %}">
+                  {{ task.status | replace('_', ' ') | title }}
+                </span>
+              </td>
+              <td>
+                {% if task.assignments %}
+                  <span class="small">{{ task.assignments | map(attribute='team_member.name') | join(', ') }}</span>
+                {% else %}
+                  <span class="small text-muted">Unassigned</span>
+                {% endif %}
+              </td>
+              <td class="small">{{ task.estimated_hours }}h</td>
+              <td class="small text-muted text-nowrap">{{ task.due_date or '—' }}</td>
+              <td>
+                <div class="d-flex gap-1">
+                  {% if can_manage_task(task.sprint.project) %}
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.edit_task', task_id=task.id) }}">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    <form method="post" action="{{ url_for('management.delete_task', task_id=task.id) }}"
+                          onsubmit="return confirm('Delete this task?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">
+                        <i class="bi bi-trash"></i>
+                      </button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="no-tasks-found" class="card p-4 text-center d-none mt-3">
+  <div class="empty-state">
+    <i class="bi bi-search empty-state-icon"></i>
+    <h3>No tasks match your search</h3>
+    <p>Try adjusting the search term or priority filter.</p>
+  </div>
+</div>
+
+<script>
+(function() {
+  const searchEl = document.getElementById('task-search');
+  const priorityEl = document.getElementById('priority-filter');
+  const noFound = document.getElementById('no-tasks-found');
+  const viewKanban = document.getElementById('view-kanban');
+  const viewList = document.getElementById('view-list');
+  const kanbanView = document.getElementById('kanban-view');
+  const listView = document.getElementById('list-view');
+  const countEl = document.getElementById('task-count');
+
+  if (viewKanban && viewList) {
+    viewKanban.addEventListener('click', () => {
+      viewKanban.classList.add('active');
+      viewList.classList.remove('active');
+      kanbanView.classList.remove('d-none');
+      listView.classList.add('d-none');
+      applyFilters();
+    });
+    viewList.addEventListener('click', () => {
+      viewList.classList.add('active');
+      viewKanban.classList.remove('active');
+      listView.classList.remove('d-none');
+      kanbanView.classList.add('d-none');
+      applyFilters();
+    });
+  }
+
+  function applyFilters() {
+    const q = (searchEl ? searchEl.value.toLowerCase() : '');
+    const p = (priorityEl ? priorityEl.value : '');
+    const isListView = !listView.classList.contains('d-none');
+
+    let totalVisible = 0;
+
+    if (isListView) {
+      const rows = document.querySelectorAll('.task-row');
+      rows.forEach(row => {
+        const matchText = !q || row.dataset.title.includes(q) || row.dataset.desc.includes(q) || row.dataset.assignee.includes(q);
+        const matchPriority = !p || row.dataset.priority === p;
+        const show = matchText && matchPriority;
+        row.style.display = show ? '' : 'none';
+        if (show) totalVisible++;
+      });
+    } else {
+      const cards = document.querySelectorAll('.kanban-task');
+      cards.forEach(card => {
+        const matchText = !q || card.dataset.title.includes(q) || card.dataset.desc.includes(q) || card.dataset.assignee.includes(q);
+        const matchPriority = !p || card.dataset.priority === p;
+        const show = matchText && matchPriority;
+        card.style.display = show ? '' : 'none';
+        if (show) totalVisible++;
+      });
+    }
+
+    if (countEl) countEl.textContent = totalVisible + ' task(s)';
+    if (noFound) noFound.classList.toggle('d-none', totalVisible > 0);
+  }
+
+  if (searchEl) searchEl.addEventListener('input', applyFilters);
+  if (priorityEl) priorityEl.addEventListener('change', applyFilters);
+})();
+</script>
 {% endblock %}

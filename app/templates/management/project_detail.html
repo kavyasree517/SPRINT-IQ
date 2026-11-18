@@ -4,72 +4,199 @@
 {% block page_title %}Project details{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 page-header">
-  <div>
-    <a href="{{ url_for('management.projects') }}" class="small text-decoration-none">← All projects</a>
-    <h1 class="mt-2">{{ project.name }}</h1>
-    <p>{{ project.description or 'No description provided.' }}</p>
-  </div>
-  {% if can_manage %}
-    <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-outline-primary" href="{{ url_for('management.edit_project', project_id=project.id) }}">Edit project</a>
-      <a class="btn btn-primary" href="{{ url_for('management.create_sprint', project_id=project.id) }}">New sprint</a>
-      <form method="post" action="{{ url_for('management.delete_project', project_id=project.id) }}" onsubmit="return confirm('Delete this project and all its sprints and tasks?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-outline-danger" type="submit">Delete project</button>
-      </form>
+<!-- Breadcrumb + header -->
+<div class="page-header">
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb mb-0 small">
+      <li class="breadcrumb-item"><a href="{{ url_for('management.projects') }}">Projects</a></li>
+      <li class="breadcrumb-item active">{{ project.name }}</li>
+    </ol>
+  </nav>
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mt-2">
+    <div>
+      <h1>{{ project.name }}</h1>
+      <p>{{ project.description or 'No description provided.' }}</p>
     </div>
-  {% endif %}
+    {% if can_manage %}
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-primary" href="{{ url_for('management.create_sprint', project_id=project.id) }}">
+          <i class="bi bi-plus-lg me-1"></i>New sprint
+        </a>
+        <a class="btn btn-outline-primary" href="{{ url_for('management.edit_project', project_id=project.id) }}">
+          <i class="bi bi-pencil me-1"></i>Edit project
+        </a>
+        <a class="btn btn-outline-primary" href="{{ url_for('management.allocations') }}?project={{ project.id }}">
+          <i class="bi bi-person-check me-1"></i>Allocate
+        </a>
+        <form method="post" action="{{ url_for('management.delete_project', project_id=project.id) }}"
+              onsubmit="return confirm('Delete this project and ALL its sprints and tasks? This cannot be undone.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-danger" type="submit">
+            <i class="bi bi-trash me-1"></i>Delete
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
 </div>
+
+<!-- Project meta cards -->
+{% set total_tasks = project.sprints | map(attribute='tasks') | sum(start=[]) | list | length %}
+{% set done_tasks = project.sprints | map(attribute='tasks') | sum(start=[]) | selectattr('status', 'equalto', 'done') | list | length %}
+{% set pct = (done_tasks / total_tasks * 100) | round(0) if total_tasks > 0 else 0 %}
 
 <div class="row g-3 mb-4">
-  <div class="col-12 col-md-4"><div class="card p-3"><span class="small text-muted">Owner</span><strong>{{ project.owner.username if project.owner else 'Unassigned' }}</strong></div></div>
-  <div class="col-6 col-md-4"><div class="card p-3"><span class="small text-muted">Status</span><strong>{{ project.status|replace('_', ' ')|title }}</strong></div></div>
-  <div class="col-6 col-md-4"><div class="card p-3"><span class="small text-muted">Timeline</span><strong>{{ project.start_date or '—' }} to {{ project.end_date or '—' }}</strong></div></div>
+  <div class="col-6 col-md-3">
+    <div class="card p-3 h-100">
+      <span class="small text-muted mb-1"><i class="bi bi-person me-1"></i>Owner</span>
+      <strong>{{ project.owner.username if project.owner else 'Unassigned' }}</strong>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card p-3 h-100">
+      <span class="small text-muted mb-1"><i class="bi bi-flag me-1"></i>Status</span>
+      <span class="badge {% if project.status == 'active' %}text-bg-success{% elif project.status == 'planning' %}text-bg-primary{% elif project.status == 'on_hold' %}text-bg-warning{% else %}text-bg-secondary{% endif %} mt-1">
+        {{ project.status | replace('_', ' ') | title }}
+      </span>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card p-3 h-100">
+      <span class="small text-muted mb-1"><i class="bi bi-calendar3 me-1"></i>Timeline</span>
+      <strong>{{ project.start_date or '—' }}</strong>
+      <small class="text-muted">to {{ project.end_date or '—' }}</small>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card p-3 h-100">
+      <span class="small text-muted mb-1"><i class="bi bi-graph-up me-1"></i>Progress</span>
+      <strong>{{ pct | int }}%</strong>
+      <div class="progress progress-xs mt-2">
+        <div class="progress-bar bg-success" style="width:{{ pct }}%"></div>
+      </div>
+      <small class="text-muted">{{ done_tasks }}/{{ total_tasks }} tasks done</small>
+    </div>
+  </div>
 </div>
 
+<!-- Sprints section -->
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h2 class="h4 mb-0">Sprints</h2>
-  <a href="{{ url_for('management.sprints') }}" class="small">All sprints</a>
+  <h2 class="h4 mb-0">
+    <i class="bi bi-lightning-charge-fill text-warning me-2"></i>Sprints
+    <span class="badge text-bg-light ms-1">{{ project.sprints | length }}</span>
+  </h2>
+  <a href="{{ url_for('management.sprints') }}" class="small text-decoration-none">All sprints →</a>
 </div>
+
 {% if project.sprints %}
   <div class="row g-3">
-    {% for sprint in project.sprints|sort(attribute='start_date') %}
+    {% for sprint in project.sprints | sort(attribute='start_date') %}
+      {% set s_total = sprint.tasks | length %}
+      {% set s_done = sprint.tasks | selectattr('status', 'equalto', 'done') | list | length %}
+      {% set s_pct = (s_done / s_total * 100) | round(0) if s_total > 0 else 0 %}
+
       <div class="col-12">
         <article class="card p-4">
-          <div class="d-flex flex-wrap justify-content-between gap-2">
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
             <div>
-              <h3 class="h5 mb-1">{{ sprint.name }}</h3>
-              <p class="mb-1 text-secondary">{{ sprint.sprint_goal or 'No sprint goal set.' }}</p>
-              <span class="small text-muted">{{ sprint.start_date }} — {{ sprint.end_date }}</span>
-              <span class="badge text-bg-light ms-2">{{ sprint.status|title }}</span>
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <h3 class="h5 mb-0">{{ sprint.name }}</h3>
+                <span class="badge {% if sprint.status == 'active' %}text-bg-success{% elif sprint.status == 'completed' %}text-bg-secondary{% else %}text-bg-light{% endif %}">
+                  {{ sprint.status | title }}
+                </span>
+              </div>
+              {% if sprint.sprint_goal %}
+                <p class="mb-1 text-secondary small">{{ sprint.sprint_goal }}</p>
+              {% endif %}
+              <span class="small text-muted">
+                <i class="bi bi-calendar3 me-1"></i>{{ sprint.start_date }} — {{ sprint.end_date }}
+              </span>
             </div>
             {% if can_manage %}
-              <div class="d-flex align-items-start gap-2">
-                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('management.allocations', sprint_id=sprint.id) }}">Allocate</a>
-                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.edit_sprint', sprint_id=sprint.id) }}">Edit sprint</a>
-                <form method="post" action="{{ url_for('management.delete_sprint', sprint_id=sprint.id) }}" onsubmit="return confirm('Delete this sprint and its tasks?');">
+              <div class="d-flex align-items-start gap-2 flex-wrap">
+                <a class="btn btn-sm btn-primary" href="{{ url_for('management.allocations', sprint_id=sprint.id) }}">
+                  <i class="bi bi-person-check me-1"></i>Allocate
+                </a>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.edit_sprint', sprint_id=sprint.id) }}">
+                  <i class="bi bi-pencil me-1"></i>Edit
+                </a>
+                <form method="post" action="{{ url_for('management.delete_sprint', sprint_id=sprint.id) }}"
+                      onsubmit="return confirm('Delete sprint and all its tasks?');">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                  <button class="btn btn-sm btn-outline-danger" type="submit"><i class="bi bi-trash"></i></button>
                 </form>
               </div>
             {% endif %}
           </div>
-          <div class="mt-3">
-            {% for task in sprint.tasks %}
-              <div class="border-top py-2 d-flex flex-wrap justify-content-between gap-2">
-                <span><strong>{{ task.title }}</strong> <span class="text-muted">· {{ task.priority|title }} · {{ task.estimated_hours }}h</span></span>
-                <span class="small text-muted">{{ task.status|replace('_', ' ')|title }}</span>
-              </div>
-            {% else %}
-              <p class="small text-muted border-top pt-3 mb-0">No tasks in this sprint yet.</p>
-            {% endfor %}
+
+          <!-- Sprint progress -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted">Sprint progress</span>
+              <span class="fw-semibold">{{ s_pct | int }}% · {{ s_done }}/{{ s_total }} tasks</span>
+            </div>
+            <div class="progress progress-sm">
+              <div class="progress-bar {% if s_pct == 100 %}bg-success{% elif s_pct >= 50 %}bg-primary{% else %}bg-warning{% endif %}" style="width:{{ s_pct }}%"></div>
+            </div>
           </div>
+
+          <!-- Task list -->
+          {% if sprint.tasks %}
+            <div class="mt-2">
+              {% for task in sprint.tasks %}
+                <div class="d-flex flex-wrap justify-content-between gap-2 py-2 border-top align-items-center">
+                  <div>
+                    <span class="fw-semibold small">{{ task.title }}</span>
+                    <span class="ms-2">
+                      <span class="badge priority-{{ task.priority }}">{{ task.priority | title }}</span>
+                    </span>
+                    <span class="text-muted small ms-2">{{ task.estimated_hours }}h</span>
+                    {% if task.due_date %}
+                      <span class="text-muted small ms-1">· Due {{ task.due_date }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="d-flex align-items-center gap-2">
+                    {% if task.assignments %}
+                      <span class="small text-muted">{{ task.assignments | map(attribute='team_member.name') | join(', ') }}</span>
+                    {% else %}
+                      <span class="small text-muted"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
+                    {% endif %}
+                    <span class="badge {% if task.status == 'done' %}text-bg-success{% elif task.status == 'in_progress' %}text-bg-primary{% else %}text-bg-light text-dark{% endif %}">
+                      {{ task.status | replace('_', ' ') | title }}
+                    </span>
+                    {% if can_manage %}
+                      <a class="btn btn-xs btn-outline-secondary btn-sm" href="{{ url_for('management.edit_task', task_id=task.id) }}" style="padding:0.1rem 0.4rem;font-size:0.7rem;">
+                        <i class="bi bi-pencil"></i>
+                      </a>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="small text-muted border-top pt-3 mb-0">
+              <i class="bi bi-inbox me-1"></i>No tasks in this sprint yet.
+              {% if can_manage %}
+                <a href="{{ url_for('management.create_task') }}">Add a task</a>
+              {% endif %}
+            </p>
+          {% endif %}
         </article>
       </div>
     {% endfor %}
   </div>
 {% else %}
-  <div class="card p-4 text-secondary">No sprints have been created for this project.</div>
+  <div class="card p-5">
+    <div class="empty-state">
+      <i class="bi bi-lightning-charge empty-state-icon"></i>
+      <h3>No sprints yet</h3>
+      <p>Create the first sprint to start planning tasks.</p>
+      {% if can_manage %}
+        <a href="{{ url_for('management.create_sprint', project_id=project.id) }}" class="btn btn-primary mt-2">
+          <i class="bi bi-plus-lg me-1"></i>Create sprint
+        </a>
+      {% endif %}
+    </div>
+  </div>
 {% endif %}
 {% endblock %}

@@ -62,6 +62,9 @@ class Project(db.Model):
 
     owner = db.relationship("User", back_populates="owned_projects")
     sprints = db.relationship("Sprint", back_populates="project", cascade="all, delete-orphan")
+    memberships = db.relationship(
+        "ProjectMember", back_populates="project", cascade="all, delete-orphan"
+    )
 
 
 class TeamMember(db.Model):
@@ -89,6 +92,30 @@ class TeamMember(db.Model):
         back_populates="team_member",
         cascade="all, delete-orphan",
     )
+    project_memberships = db.relationship(
+        "ProjectMember", back_populates="team_member", cascade="all, delete-orphan"
+    )
+
+
+class ProjectMember(db.Model):
+    __tablename__ = "project_members"
+    __table_args__ = (
+        UniqueConstraint("project_id", "team_member_id", name="uq_project_member"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(
+        db.Integer, db.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    team_member_id = db.Column(
+        db.Integer, db.ForeignKey("team_members.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    project = db.relationship("Project", back_populates="memberships")
+    team_member = db.relationship("TeamMember", back_populates="project_memberships")
 
 
 class Sprint(db.Model):
@@ -113,6 +140,7 @@ class Task(db.Model):
     __tablename__ = "tasks"
     __table_args__ = (
         CheckConstraint("estimated_hours >= 0", name="ck_tasks_estimated_hours"),
+        CheckConstraint("actual_hours >= 0", name="ck_tasks_actual_hours"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -122,6 +150,7 @@ class Task(db.Model):
     required_skills = db.Column(db.Text, nullable=False, default="", server_default="")
     priority = db.Column(db.String(32), nullable=False, default="medium", server_default="medium")
     estimated_hours = db.Column(db.Float, nullable=False, default=0)
+    actual_hours = db.Column(db.Float, nullable=False, default=0, server_default="0")
     status = db.Column(db.String(32), nullable=False, default="todo", server_default="todo")
     due_date = db.Column(db.Date)
 

@@ -7,47 +7,168 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 page-header">
   <div>
     <h1>Projects</h1>
-    <p>Explore projects, owners, and sprint progress.</p>
+    <p>Manage your projects, sprints, and team assignments.</p>
   </div>
-  {% if can_create %}
-    <a class="btn btn-primary" href="{{ url_for('management.create_project') }}">
-      <i class="bi bi-plus-lg"></i> New project
-    </a>
-  {% endif %}
+  <div class="d-flex gap-2">
+    {% if can_create %}
+      <a class="btn btn-primary" href="{{ url_for('management.create_project') }}">
+        <i class="bi bi-plus-lg me-1"></i>New project
+      </a>
+    {% endif %}
+  </div>
 </div>
+
+<!-- Search & filter bar -->
+<div class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="project-search">Search projects</label>
+      <div class="input-group">
+        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" id="project-search" class="form-control border-start-0" placeholder="Filter by name or description…">
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label" for="status-filter">Status</label>
+      <select id="status-filter" class="form-select">
+        <option value="">All statuses</option>
+        <option value="planning">Planning</option>
+        <option value="active">Active</option>
+        <option value="on_hold">On Hold</option>
+        <option value="completed">Completed</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 d-flex align-items-end">
+      <span class="text-muted small" id="project-count">{{ projects|length }} project(s)</span>
+    </div>
+  </div>
+</div>
+
 {% if projects %}
-  <div class="row g-3">
+  <div class="row g-3" id="projects-grid">
     {% for project in projects %}
-      <div class="col-12 col-lg-6">
+      {% set total_tasks = project.sprints | map(attribute='tasks') | sum(start=[]) | list | length %}
+      {% set done_tasks = project.sprints | map(attribute='tasks') | sum(start=[]) | selectattr('status', 'equalto', 'done') | list | length %}
+      {% set pct = (done_tasks / total_tasks * 100) | round(0) if total_tasks > 0 else 0 %}
+
+      <div class="col-12 col-lg-6 project-item"
+           data-name="{{ project.name | lower }}"
+           data-desc="{{ (project.description or '') | lower }}"
+           data-status="{{ project.status }}">
         <article class="card project-card h-100 p-4">
-          <div class="d-flex justify-content-between gap-3">
-            <div>
-              <h2 class="h5 mb-1">
-                <a class="text-decoration-none" href="{{ url_for('management.project_detail', project_id=project.id) }}">{{ project.name }}</a>
-              </h2>
-              <div class="small text-muted">Owner: {{ project.owner.username if project.owner else 'Unassigned' }}</div>
+          <div class="d-flex justify-content-between gap-3 mb-3">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center gap-2 mb-1">
+                <div class="stat-card-icon icon-violet" style="width:36px;height:36px;font-size:0.9rem;border-radius:8px;">
+                  <i class="bi bi-kanban"></i>
+                </div>
+                <h2 class="h5 mb-0">
+                  <a class="text-decoration-none text-dark" href="{{ url_for('management.project_detail', project_id=project.id) }}">
+                    {{ project.name }}
+                  </a>
+                </h2>
+              </div>
+              <div class="small text-muted">
+                <i class="bi bi-person me-1"></i>{{ project.owner.username if project.owner else 'Unassigned' }}
+              </div>
             </div>
-            <span class="badge text-bg-light align-self-start">{{ project.status|replace('_', ' ')|title }}</span>
+            <div class="text-end flex-shrink-0">
+              <span class="badge {% if project.status == 'active' %}text-bg-success{% elif project.status == 'planning' %}text-bg-primary{% elif project.status == 'on_hold' %}text-bg-warning{% else %}text-bg-secondary{% endif %}">
+                {{ project.status | replace('_', ' ') | title }}
+              </span>
+            </div>
           </div>
-          <p class="mt-3 mb-2 text-secondary">{{ project.description or 'No description provided.' }}</p>
-          <div class="small text-muted mb-3">
-            {{ project.start_date or 'No start date' }} — {{ project.end_date or 'No end date' }}
-            <span class="ms-2">{{ project.sprints|length }} sprint(s)</span>
+
+          <p class="text-secondary small mb-3">{{ project.description or 'No description provided.' }}</p>
+
+          <!-- Progress bar -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="text-muted">Overall progress</span>
+              <span class="fw-semibold">{{ pct | int }}%</span>
+            </div>
+            <div class="progress progress-sm">
+              <div class="progress-bar bg-success" style="width: {{ pct }}%"></div>
+            </div>
           </div>
+
+          <!-- Meta info -->
+          <div class="d-flex flex-wrap gap-3 small text-muted mb-3">
+            <span><i class="bi bi-calendar3 me-1"></i>{{ project.start_date or 'No start' }} — {{ project.end_date or 'No end' }}</span>
+            <span><i class="bi bi-lightning-charge me-1"></i>{{ project.sprints | length }} sprint(s)</span>
+            <span><i class="bi bi-check2-square me-1"></i>{{ done_tasks }}/{{ total_tasks }} tasks</span>
+          </div>
+
           <div class="d-flex gap-2 mt-auto">
-            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('management.project_detail', project_id=project.id) }}">View project</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('management.project_detail', project_id=project.id) }}">
+              <i class="bi bi-eye me-1"></i>View
+            </a>
             {% if can_manage(project) %}
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.edit_project', project_id=project.id) }}">Edit</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('management.edit_project', project_id=project.id) }}">
+                <i class="bi bi-pencil me-1"></i>Edit
+              </a>
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('management.create_sprint', project_id=project.id) }}">
+                <i class="bi bi-plus me-1"></i>Sprint
+              </a>
             {% endif %}
           </div>
         </article>
       </div>
     {% endfor %}
   </div>
+
+  <!-- No results state (shown by JS) -->
+  <div id="no-projects-found" class="card p-5 text-center d-none">
+    <div class="empty-state">
+      <i class="bi bi-search empty-state-icon"></i>
+      <h3>No projects found</h3>
+      <p>Try adjusting your search or filter.</p>
+    </div>
+  </div>
+
 {% else %}
-  <div class="card p-5 text-center">
-    <h2 class="h5">No projects yet</h2>
-    <p class="text-secondary mb-0">{% if can_create %}Create a project to start organizing sprints and tasks.{% else %}A project manager can create the first project.{% endif %}</p>
+  <div class="card p-5">
+    <div class="empty-state">
+      <i class="bi bi-kanban empty-state-icon"></i>
+      <h3>No projects yet</h3>
+      <p>{% if can_create %}Create your first project to start organizing sprints and tasks.{% else %}A project manager or administrator can create the first project.{% endif %}</p>
+      {% if can_create %}
+        <a href="{{ url_for('management.create_project') }}" class="btn btn-primary mt-2">
+          <i class="bi bi-plus-lg me-1"></i>Create project
+        </a>
+      {% endif %}
+    </div>
   </div>
 {% endif %}
+
+<script>
+(function() {
+  const searchInput = document.getElementById('project-search');
+  const statusFilter = document.getElementById('status-filter');
+  const items = document.querySelectorAll('.project-item');
+  const countEl = document.getElementById('project-count');
+  const noFound = document.getElementById('no-projects-found');
+
+  function filterProjects() {
+    const q = (searchInput ? searchInput.value : '').toLowerCase();
+    const status = statusFilter ? statusFilter.value : '';
+    let visible = 0;
+    items.forEach(item => {
+      const name = item.dataset.name || '';
+      const desc = item.dataset.desc || '';
+      const itemStatus = item.dataset.status || '';
+      const matchText = !q || name.includes(q) || desc.includes(q);
+      const matchStatus = !status || itemStatus === status;
+      const show = matchText && matchStatus;
+      item.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    if (countEl) countEl.textContent = visible + ' project(s)';
+    if (noFound) noFound.classList.toggle('d-none', visible > 0 || items.length === 0);
+  }
+
+  if (searchInput) searchInput.addEventListener('input', filterProjects);
+  if (statusFilter) statusFilter.addEventListener('change', filterProjects);
+})();
+</script>
 {% endblock %}
