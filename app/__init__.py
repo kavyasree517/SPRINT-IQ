@@ -1,7 +1,8 @@
-from flask import Flask
+from flask import Flask, jsonify, request
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFError, CSRFProtect
+from werkzeug.exceptions import HTTPException
 from sqlalchemy import event, inspect
 
 # Initialize extensions
@@ -112,6 +113,19 @@ def _upgrade_phase4_schema():
             )
 
 
+def _upgrade_phase7_schema():
+    inspector = inspect(db.engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("tasks")}
+    if "actual_hours" not in columns:
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE tasks ADD COLUMN actual_hours FLOAT NOT NULL DEFAULT 0"
+            )
+
+
 def create_app(test_config=None):
     """Application factory.
 
@@ -132,11 +146,53 @@ def create_app(test_config=None):
     from .main import main_bp
     from .auth import auth_bp
     from .management import management_bp
+    from .api import api_bp
     from . import models
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(management_bp)
+    app.register_blueprint(api_bp)
+
+    @app.errorhandler(HTTPException)
+    def handle_http_error(error):
+        if request.path.startswith("/api/"):
+            return jsonify(
+                {
+                    "error": {
+                        "code": error.name.lower().replace(" ", "_"),
+                        "message": error.description,
+                    }
+                }
+            ), error.code
+        return error
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(error):
+        if request.path.startswith("/api/"):
+            return jsonify(
+                {
+                    "error": {
+                        "code": "csrf_error",
+                        "message": "A valid CSRF token is required.",
+                    }
+                }
+            ), 400
+        return error
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(error):
+        if request.path.startswith("/api/"):
+            app.logger.exception("Unhandled API error")
+            return jsonify(
+                {
+                    "error": {
+                        "code": "internal_server_error",
+                        "message": "An unexpected error occurred.",
+                    }
+                }
+            ), 500
+        raise error
 
     with app.app_context():
         if db.engine.dialect.name == "sqlite":
@@ -145,5 +201,6 @@ def create_app(test_config=None):
         _upgrade_legacy_users_table()
         _upgrade_phase3_schema()
         _upgrade_phase4_schema()
+        _upgrade_phase7_schema()
 
     return app
